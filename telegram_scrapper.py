@@ -4,10 +4,8 @@ Telegram Scraper
 
 This script reads configuration from 'config.json' for Telegram API credentials,
 channels to scrape, and PostgreSQL connection details. It then scrapes the latest
-messages from the specified Telegram channels and stores them in the existing `scraped_messages` table.
+messages from the specified `scraped_messages` table, translates them if necessary, and stores the data.
 """
-
-#this is a test comment
 
 import asyncio
 import json
@@ -16,6 +14,8 @@ from datetime import datetime
 from telethon import TelegramClient
 import psycopg2
 from psycopg2.extras import execute_values
+from langdetect import detect
+from googletrans import Translator
 
 # ----------------------------
 # Configuration Loader
@@ -38,7 +38,7 @@ def create_db_connection(db_config):
     )
 
 def insert_messages(conn, messages):
-    """Insert scraped Telegram messages into the existing `scraped_messages` table."""
+    """Insert scraped Telegram messages into the `scraped_messages` table."""
     with conn.cursor() as cur:
         sql = """
             INSERT INTO scraped_messages (
@@ -74,9 +74,38 @@ def insert_messages(conn, messages):
             execute_values(cur, sql, values)
             conn.commit()
 
+def update_translation_in_db(conn, message_id, translated_text):
+    """Update the translated text in the database."""
+    try:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE scraped_messages SET source_message_translated = %s WHERE id = %s",
+                (translated_text, message_id),
+            )
+            conn.commit()
+    except Exception as e:
+        print(f"Database update error: {e}")
+
 # ----------------------------
-# Telegram Scraping Functions
+# Language Detection & Translation Functions
 # ----------------------------
+translator = Translator()
+
+def detect_and_translate(text):
+    """Detect language and translate to English if necessary."""
+    if not text:
+        return ""
+
+    try:
+        lang = detect(text)
+        if lang != "en":
+            translated = translator.translate(text, src=lang, dest="en")
+            return translated.text
+        return text
+    except Exception as e:
+        print(f"Translation error: {e}")
+        return text
+
 async def fetch_messages_from_channel(client, channel_identifier, limit=100):
     """Fetch messages from a specific Telegram channel."""
     messages = []
@@ -91,13 +120,13 @@ async def fetch_messages_from_channel(client, channel_identifier, limit=100):
             event_date = message.date.strftime("%Y-%m-%d")
             event_time = message.date.strftime("%H:%M:%S")
             messages.append({
-                'security_area': 'Unknown',  # Placeholder, update if possible
-                'region': 'Unknown',  # Placeholder, update if needed
-                'city_town_area': 'Unknown',  # Placeholder
+                'security_area': 'Unknown',
+                'region': 'Unknown',
+                'city_town_area': 'Unknown',
                 'event_date': event_date,
                 'event_time': event_time,
                 'source_message_original': message.message,
-                'source_message_translated': '',  # Placeholder for future translation
+                'source_message_translated': '',  # Placeholder for translation
                 'target_group': '',
                 'perpetrator_group': '',
                 'threat_type': 'Unknown',
@@ -139,8 +168,25 @@ async def main():
     # Fetch messages from Telegram.
     messages = await fetch_all_messages(config)
 
+    # Translate messages if needed
+    for msg in messages:
+        if not msg.get("source_message_translated"):  # Only translate if empty
+            msg["source_message_translated"] = detect_and_translate(msg["source_message_original"])
+
     # Insert messages into the database.
     insert_messages(conn, messages)
+
+    # Update existing translations in DB
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, source_message_original FROM scraped_messages WHERE source_message_translated IS NULL OR source_message_translated = ''"
+        )
+        untranslated_messages = cur.fetchall()
+
+    for msg_id, original_text in untranslated_messages:
+        translated_text = detect_and_translate(original_text)
+        update_translation_in_db(conn, msg_id, translated_text)
+
     conn.close()
 
 # ----------------------------
