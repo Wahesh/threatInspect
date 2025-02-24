@@ -7,6 +7,8 @@ channels to scrape, and PostgreSQL connection details. It then scrapes the lates
 messages from the specified Telegram channels and stores them in the existing `scraped_messages` table.
 """
 
+#this is a test comment
+
 import asyncio
 import json
 import os
