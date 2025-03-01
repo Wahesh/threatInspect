@@ -15,7 +15,7 @@ from datetime import datetime
 from telethon import TelegramClient
 import psycopg2
 from psycopg2.extras import execute_values
-import google.generativeai as genai
+from translate import Translator
 
 # ----------------------------
 # Load Configuration
@@ -93,43 +93,35 @@ def insert_messages(messages):
 # ----------------------------
 # Google Gemini Translation
 # ----------------------------
-import google.generativeai as genai
 
 # Configure API once (instead of every function call)
-genai.configure(api_key=config["gemini"]["api_key"])
-model = genai.GenerativeModel("gemini-1.5-pro")  # Use the latest model
 
-def translate_text(text):
-    """Translate text using Gemini API"""
+def translate_text(text, to_language="en"):
+    """Translate text using the translate library from PyPI"""
     if not text:
         return ""
 
     try:
-        response = model.generate_content(f"Translate the following text to English:\n\n{text}")
+        # Create a translator object
+        translator = Translator(to_lang=to_language)
         
-        # Ensure response has the expected text
-        if hasattr(response, "text") and response.text:
-            return response.text.strip()
-        elif hasattr(response, "candidates") and response.candidates:
-            return response.candidates[0].content.strip()
-        else:
-            print(f"Translation failed: No valid response received.")
-            return text  # Return original text if translation fails
+        # Translate the text
+        translation = translator.translate(text)
+        
+        return translation.strip()
     except Exception as e:
         print(f"Translation error: {e}")
-        return text
-
+        return text  # Return original text if translation fails
 
 # ----------------------------
 # Telegram Scraping Functions
 # ----------------------------
-
 async def fetch_messages_from_channel(client, channel_identifier):
     """Fetch messages from a specific Telegram channel."""
     messages = []
     
     # Check devmode: If enabled, fetch only 10 messages
-    message_limit = 10 if config.get("devmode", 0) == 1 else 100
+    message_limit = 1 if config.get("devmode", 0) == 1 else 100
 
     try:
         entity = await client.get_entity(channel_identifier)
@@ -142,9 +134,6 @@ async def fetch_messages_from_channel(client, channel_identifier):
             event_date = message.date.strftime("%Y-%m-%d")
             event_time = message.date.strftime("%H:%M:%S")
 
-            # 🔹 Call translation function before saving
-            translated_text = translate_text(message.message)
-
             messages.append({
                 'security_area': 'Unknown',
                 'region': 'Unknown',
@@ -152,7 +141,7 @@ async def fetch_messages_from_channel(client, channel_identifier):
                 'event_date': event_date,
                 'event_time': event_time,
                 'source_message_original': message.message,
-                'source_message_translated': translated_text,  # ✅ Store translated text
+                'source_message_translated': '',
                 'target_group': '',
                 'perpetrator_group': '',
                 'threat_type': 'Unknown',
@@ -167,9 +156,6 @@ async def fetch_messages_from_channel(client, channel_identifier):
 
     print(f"Fetched {len(messages)} messages from {channel_identifier}")
     return messages
-
-
-
 async def fetch_all_messages():
     """Fetch messages from all channels listed in `config.json`."""
     telegram_config = config["telegram"]
