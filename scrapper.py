@@ -123,12 +123,13 @@ def translate_text(text):
 # ----------------------------
 # Telegram Scraping Functions
 # ----------------------------
+
 async def fetch_messages_from_channel(client, channel_identifier):
     """Fetch messages from a specific Telegram channel."""
     messages = []
     
     # Check devmode: If enabled, fetch only 10 messages
-    message_limit = 1 if config.get("devmode", 0) == 1 else 100
+    message_limit = 10 if config.get("devmode", 0) == 1 else 100
 
     try:
         entity = await client.get_entity(channel_identifier)
@@ -141,6 +142,9 @@ async def fetch_messages_from_channel(client, channel_identifier):
             event_date = message.date.strftime("%Y-%m-%d")
             event_time = message.date.strftime("%H:%M:%S")
 
+            # 🔹 Call translation function before saving
+            translated_text = translate_text(message.message)
+
             messages.append({
                 'security_area': 'Unknown',
                 'region': 'Unknown',
@@ -148,7 +152,7 @@ async def fetch_messages_from_channel(client, channel_identifier):
                 'event_date': event_date,
                 'event_time': event_time,
                 'source_message_original': message.message,
-                'source_message_translated': '',
+                'source_message_translated': translated_text,  # ✅ Store translated text
                 'target_group': '',
                 'perpetrator_group': '',
                 'threat_type': 'Unknown',
@@ -163,6 +167,9 @@ async def fetch_messages_from_channel(client, channel_identifier):
 
     print(f"Fetched {len(messages)} messages from {channel_identifier}")
     return messages
+
+
+
 async def fetch_all_messages():
     """Fetch messages from all channels listed in `config.json`."""
     telegram_config = config["telegram"]
