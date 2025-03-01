@@ -105,15 +105,20 @@ def translate_text(text):
         return ""
 
     try:
-        response = model.generate_content(f"Translate this to English: {text}")
-        if hasattr(response, "text"):  # Ensure response has 'text' attribute
-            return response.text
+        response = model.generate_content(f"Translate the following text to English:\n\n{text}")
+        
+        # Ensure response has the expected text
+        if hasattr(response, "text") and response.text:
+            return response.text.strip()
+        elif hasattr(response, "candidates") and response.candidates:
+            return response.candidates[0].content.strip()
         else:
-            print("Translation failed: No 'text' in response.")
-            return text
+            print(f"Translation failed: No valid response received.")
+            return text  # Return original text if translation fails
     except Exception as e:
         print(f"Translation error: {e}")
         return text
+
 
 # ----------------------------
 # Telegram Scraping Functions
